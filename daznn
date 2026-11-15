@@ -1,0 +1,645 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<meta name="referrer" content="no-referrer">
+<title>Shaka DASH Player</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/shaka-player@5.2.4/dist/controls.css">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:#000;color:#EDF2F9;font:400 15px/1.5 Inter,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif}
+
+/* ---------- SCREEN ---------- */
+.screen{
+  position:relative;background:#000;overflow:hidden;
+  width:100vw;height:100vh;height:100dvh;
+  margin:0;border-radius:0;
+}
+html,body{overflow-x:hidden}
+#player-container{position:absolute;inset:0;background:#000}
+#player-container video{width:100%;height:100%;object-fit:contain;background:#000;display:block}
+#player-container video.mode-fill{object-fit:fill}
+#player-container video.mode-cover{object-fit:cover}
+#player-container:fullscreen{width:100%;height:100%;background:#000}
+#player-container:-webkit-full-screen{width:100%;height:100%;background:#000}
+.screen-msg{position:absolute;inset:0;display:grid;place-items:center;color:#8f9baa;font-size:14px;text-align:center;padding:20px}
+
+/* ---------- STATUS TOAST ---------- */
+#status{
+  position:absolute;top:12px;left:12px;transform:translateY(-10px);z-index:9998;
+  display:flex;align-items:center;gap:7px;padding:6px 15px 6px 11px;
+  background:rgba(10,10,10,.92);border:1px solid rgba(255,255,255,.07);
+  font-size:11.5px;font-weight:500;letter-spacing:.2px;border-radius:24px;pointer-events:none;
+  opacity:0;transition:opacity .25s ease,transform .25s ease;
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  white-space:nowrap;max-width:calc(100% - 24px);overflow:hidden;
+  box-shadow:0 2px 14px rgba(0,0,0,.45);color:#c0c0c0;
+}
+#status.show{opacity:1;transform:translateY(0)}
+#status.ok .st-dot{background:#60a5fa}
+#status.live{color:#c8c8c8}
+#status.live .st-dot{background:#22d3a0;animation:dot-pulse 2s ease-in-out infinite}
+#status.warn{color:#fcd34d}
+#status.warn .st-dot{background:#fb923c;animation:dot-pulse 1s ease-in-out infinite}
+#status.err{color:#fca5a5}
+#status.err .st-dot{background:#f87171}
+.st-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;display:inline-block}
+@keyframes dot-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.55)}}
+
+/* ---------- LOADING OVERLAY ---------- */
+.loading-overlay{
+  position:absolute;inset:0;z-index:9997;background:rgba(0,0,0,.85);
+  display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;
+  backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);
+}
+.loading-overlay svg{animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-overlay p{color:#8f9baa;font-size:12.5px;letter-spacing:.5px;text-align:center;padding:0 24px;font-weight:500}
+[hidden]{display:none!important}
+
+/* ---------- FIT BUTTON ---------- */
+.sp-btn{
+  background:transparent!important;border:none!important;cursor:pointer!important;
+  padding:0 8px!important;opacity:.75;display:flex;align-items:center;justify-content:center;
+  height:100%;min-width:36px;transition:opacity .15s,color .15s;color:#fff!important;
+  -webkit-tap-highlight-color:transparent;
+}
+.sp-btn:hover{opacity:1}
+.sp-btn:active{opacity:1;transform:scale(.9)}
+.sp-btn:focus-visible{outline:2px solid #FDBE02;outline-offset:2px;border-radius:6px}
+.sp-fit-btn{padding:0 7px!important;min-width:auto!important}
+.fit-pill{
+  font-size:10px;font-weight:700;letter-spacing:.4px;padding:3px 7px;border-radius:4px;line-height:1;
+  border:1.5px solid rgba(255,255,255,.28);color:rgba(255,255,255,.8);
+  pointer-events:none;white-space:nowrap;transition:border-color .2s,color .2s;
+}
+.sp-fit-btn:hover .fit-pill,
+.sp-fit-btn.mode-fill .fit-pill,
+.sp-fit-btn.mode-cover .fit-pill{border-color:#FDBE02;color:#FDBE02}
+
+/* ---------- SHAKA UI OVERRIDES ---------- */
+.shaka-controls-container button{color:#fff!important}
+.shaka-video-container{background-color:#000!important}
+.shaka-spinner-container{display:none!important}
+.shaka-video-container .shaka-scrim-container{
+  background:linear-gradient(180deg,rgba(0,0,0,.5) 0%,transparent 25%,transparent 55%,rgba(0,0,0,.75) 100%)!important;
+}
+.shaka-video-container .shaka-bottom-controls{padding-bottom:max(env(safe-area-inset-bottom,0px),6px)!important}
+.shaka-overflow-menu,.shaka-settings-menu{
+  background-color:rgba(15,20,28,.97)!important;border:1px solid #212B39!important;
+  border-radius:14px!important;padding:6px!important;box-shadow:0 16px 40px rgba(0,0,0,.7)!important;
+}
+.shaka-overflow-menu li,.shaka-settings-menu li{padding:0!important;margin:2px 0!important}
+.shaka-overflow-menu button,.shaka-settings-menu button{
+  color:#EDF2F9!important;padding:10px 14px!important;border-radius:8px!important;font-size:13px!important;
+  transition:background .15s ease,color .15s ease!important;
+}
+.shaka-overflow-menu button:hover,.shaka-settings-menu button:hover{background-color:rgba(255,255,255,.06)!important}
+.shaka-settings-menu button.shaka-chosen-item,
+.shaka-settings-menu .shaka-back-to-overflow-button{color:#FDBE02!important}
+.shaka-settings-menu .shaka-back-to-overflow-button{border-bottom:1px solid #212B39!important;margin-bottom:4px!important}
+.shaka-play-button{filter:drop-shadow(0 4px 16px rgba(253,190,2,.35))!important}
+.shaka-video-container .shaka-range-element{accent-color:#FDBE02}
+
+/* ---------- STREAM LIST ---------- */
+.streams{display:flex;flex-direction:column;gap:8px;max-width:980px;margin:16px auto 32px;padding:0 16px}
+.stream-btn{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;
+  padding:14px 16px;border-radius:14px;text-align:left;color:#EDF2F9;cursor:pointer;font:inherit;
+  border:1px solid transparent;
+  background:linear-gradient(#0F141C,#0F141C) padding-box,linear-gradient(100deg,#FDBE02,#FFF) border-box;
+}
+.stream-btn:hover,.stream-btn.active{background:linear-gradient(100deg,#FDBE02,#FFF);color:#17130A}
+.stream-btn .title{font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.type-badge{font-size:10px;font-weight:700;letter-spacing:.06em;padding:3px 9px;border-radius:999px;background:rgba(255,255,255,.08)}
+
+@media(max-width:480px){
+  #status{top:8px;left:8px;font-size:10.5px;padding:5px 12px 5px 9px}
+  .fit-pill{font-size:9px;padding:2px 5px}
+  .sp-btn{padding:0 5px!important}
+}
+</style>
+</head>
+<body>
+
+<div class="screen">
+  <div id="player-container"></div>
+</div>
+<div class="streams" id="streams"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/shaka-player@5.2.4/dist/shaka-player.ui.min.js"></script>
+<script>
+"use strict";
+
+/* ============================================================
+   SOURCE CONFIG
+   Edit DEFAULT_SOURCE, or pass via URL:
+     shaka-player.html?url=<manifest.mpd>&key=<kid>:<key>
+   ============================================================ */
+const DEFAULT_SOURCE = {
+  link: "https://otte.cache.aiv-cdn.net/iad-nitro/live/clients/dash/enc/dg9ygvtffy/out/v1/f2a8c782c6664f649cf5ec23e4f578af/cenc.mpd",   // https://.../manifest.mpd
+  key:  "9c99e376ca072739ff5a424d2644321c:90c06edbb9465cb58d230501299cf559"    // optional ClearKey "kid:key" (hex)
+};
+
+const LOG = (...a) => console.log("[PLAYER]", ...a);
+const ERR = (...a) => console.error("[PLAYER]", ...a);
+const $ = id => document.getElementById(id);
+
+/* ============================================================
+   TIER / DEVICE PROFILE
+   ============================================================ */
+function getTier(){
+  const mem = navigator.deviceMemory || 4;
+  const cores = navigator.hardwareConcurrency || 4;
+  const mob = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  const net = conn ? (conn.effectiveType || "4g") : "4g";
+  if(!mob) return "high";
+  if(mem <= 1.5 || cores <= 2 || net === "slow-2g" || net === "2g") return "low";
+  if(mem <= 3 || cores <= 4) return "mid";
+  return "high";
+}
+const TIER = getTier();
+const PROF = {
+  low : { buf:4,  reBuf:1.5, behind:10, maxH:480,  maxBw:1000000, bwEst:400000  },
+  mid : { buf:7,  reBuf:1.5, behind:20, maxH:720,  maxBw:3000000, bwEst:1000000 },
+  high: { buf:10, reBuf:1.5, behind:25, maxH:1080, maxBw:0,       bwEst:2000000 }
+}[TIER];
+
+/* ============================================================
+   HELPERS
+   ============================================================ */
+function esc(v){
+  return String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+function toast(msg, type, dur){
+  const el = $("status");
+  if(!el) return;
+  el.innerHTML = `<span class="st-dot"></span><span>${esc(msg)}</span>`;
+  el.className = "show " + (type || "ok");
+  clearTimeout(el.__tmr);
+  if(dur !== 0){
+    el.__tmr = setTimeout(() => { el.className = el.className.replace("show","").trim(); }, dur || 4000);
+  }
+}
+
+function shakaErrStr(e){
+  if(!e) return "Playback Error";
+  const cat = {1:"Network",2:"Text",3:"Media",4:"Manifest",5:"Stream",6:"DRM",7:"Player"};
+  let s = (cat[e.category] || "Error") + " " + e.category + ":" + e.code;
+  if(e.data && e.data[0] && typeof e.data[0] === "string") s += " — " + e.data[0].slice(0,72);
+  return s;
+}
+
+function ratioLabel(w,h){
+  if(!w || !h) return "—";
+  const gcd = (a,b) => b ? gcd(b,a%b) : a;
+  const g = gcd(w,h) || 1;
+  const rw = w/g, rh = h/g;
+  const named = {"16:9":16/9,"4:3":4/3,"21:9":21/9,"1:1":1,"9:16":9/16,"3:2":3/2,"5:4":5/4,"2:1":2};
+  const real = w/h;
+  let best = null, bestD = .02;
+  Object.keys(named).forEach(k => { const d = Math.abs(named[k] - real); if(d < bestD){ bestD = d; best = k; } });
+  if(best) return best;
+  if(rw <= 40 && rh <= 40) return rw + ":" + rh;
+  return real.toFixed(2) + ":1";
+}
+
+function getClearKey(record){
+  const raw = String(record && record.key || "").trim();
+  if(!raw || !raw.includes(":")) return null;
+  const parts = raw.split(":");
+  if(parts.length < 2) return null;
+  const kid = parts.shift().trim().replace(/^0x/i,"").toLowerCase();
+  const key = parts.join(":").trim().replace(/^0x/i,"").toLowerCase();
+  if(!/^[0-9a-f]+$/.test(kid) || !/^[0-9a-f]+$/.test(key)) return null;
+  return {keyId: kid, key};
+}
+
+function makeLoadingEl(){
+  const el = document.createElement("div");
+  el.className = "loading-overlay";
+  el.innerHTML = `<svg width="34" height="34" viewBox="0 0 40 40" fill="none"><circle cx="20" cy="20" r="16" stroke="#1a1a1a" stroke-width="4"/><path d="M20 4a16 16 0 0 1 16 16" stroke="#FDBE02" stroke-width="4" stroke-linecap="round"/></svg><p>Loading stream…</p>`;
+  return el;
+}
+
+/* ============================================================
+   FIT BUTTON
+   ============================================================ */
+function injectFitButton(container, vid){
+  const panel = container.querySelector(".shaka-controls-button-panel");
+  if(!panel) return false;
+  if(panel.querySelector(".sp-fit-btn")) return true;
+  const anchor = panel.querySelector(".shaka-fullscreen-button");
+  const FITS = ["contain","fill","cover"];
+  const FIT_LABELS = {contain:"Fit", fill:"Fill", cover:"Zoom"};
+  let fitIdx = 0;
+  const fitBtn = document.createElement("button");
+  fitBtn.className = "sp-btn sp-fit-btn";
+  fitBtn.title = "Video Fit: Fit";
+  fitBtn.setAttribute("aria-label", "Cycle Video Fit Mode");
+  fitBtn.innerHTML = '<span class="fit-pill">—</span>';
+  if(anchor) panel.insertBefore(fitBtn, anchor); else panel.appendChild(fitBtn);
+  let currentRatio = "—";
+  function applyFit(i){
+    fitIdx = i;
+    const m = FITS[i];
+    vid.classList.remove("mode-fill","mode-cover");
+    if(m === "fill") vid.classList.add("mode-fill");
+    if(m === "cover") vid.classList.add("mode-cover");
+    fitBtn.classList.remove("mode-fill","mode-cover");
+    if(m !== "contain") fitBtn.classList.add("mode-" + m);
+    fitBtn.title = "Video Fit: " + FIT_LABELS[m];
+    const pill = fitBtn.querySelector(".fit-pill");
+    if(pill) pill.textContent = m === "contain" ? currentRatio : FIT_LABELS[m];
+  }
+  fitBtn.addEventListener("click", (e) => { e.stopPropagation(); applyFit((fitIdx + 1) % FITS.length); });
+  ["fullscreenchange","webkitfullscreenchange"].forEach(ev => {
+    document.addEventListener(ev, () => {
+      if(!document.fullscreenElement && !document.webkitFullscreenElement) applyFit(0);
+    });
+  });
+  let ratioTries = 0;
+  function updateRatio(){
+    const pill = fitBtn.querySelector(".fit-pill");
+    if(!pill) return;
+    if(vid.videoWidth > 0){
+      currentRatio = ratioLabel(vid.videoWidth, vid.videoHeight);
+      if(FITS[fitIdx] === "contain") pill.textContent = currentRatio;
+      ratioTries = 0;
+    } else if(ratioTries < 15){
+      ratioTries++;
+      setTimeout(updateRatio, 700);
+    }
+  }
+  vid.addEventListener("loadedmetadata", () => { ratioTries = 0; updateRatio(); });
+  vid.addEventListener("resize", updateRatio);
+  vid.addEventListener("timeupdate", function onFirst(){ vid.removeEventListener("timeupdate", onFirst); updateRatio(); });
+  updateRatio();
+  return true;
+}
+
+/* ============================================================
+   PLAYER STATE
+   ============================================================ */
+let player = null;
+let overlay = null;
+let playbackToken = 0;
+let sessionStart = 0;
+let thermalTimer = null;
+let thermalApplied = false;
+let restrictionsRelaxed = false;
+let refreshing = false;
+let retries = 0;
+let edgeTried = false;
+let started = false;
+let stallTmr = null;
+
+/* ============================================================
+   CONFIG BUILDER
+   ============================================================ */
+function buildCfg(){
+  const mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const effMaxH = thermalApplied && mobile ? Math.min(PROF.maxH, 720) : PROF.maxH;
+  const restr = {};
+  if(!restrictionsRelaxed){
+    if(effMaxH < 1080) restr.maxHeight = effMaxH;
+    if(PROF.maxBw > 0) restr.maxBandwidth = PROF.maxBw;
+  }
+  return {
+    manifest:{ defaultPresentationDelay:4, ignoreTextStreamFailures:true,
+      retryParameters:{ maxAttempts:5, baseDelay:500, backoffFactor:2, fuzzFactor:.5, timeout:30000 } },
+    streaming:{ lowLatencyMode:false, bufferingGoal:PROF.buf, rebufferingGoal:PROF.reBuf, bufferBehind:PROF.behind,
+      safeSeekOffset:4, stallEnabled:true, stallThreshold:1, stallSkip:.3, inaccurateManifestTolerance:0,
+      retryParameters:{ maxAttempts:5, baseDelay:500, backoffFactor:2, fuzzFactor:.5, timeout:30000 } },
+    abr:{ enabled:true, defaultBandwidthEstimate:PROF.bwEst, switchInterval:4, restrictions:restr }
+  };
+}
+
+/* ============================================================
+   DESTROY
+   ============================================================ */
+async function destroyPlayer(){
+  if(stallTmr){ clearTimeout(stallTmr); stallTmr = null; }
+  if(thermalTimer){ clearInterval(thermalTimer); thermalTimer = null; }
+  if(overlay){ try{ overlay.destroy(); }catch(e){} overlay = null; }
+  if(player){ try{ await player.destroy(); }catch(e){} player = null; }
+  const c = $("player-container");
+  if(c) c.innerHTML = "";
+  sessionStart = 0; thermalApplied = false; restrictionsRelaxed = false;
+  refreshing = false; retries = 0; edgeTried = false; started = false;
+}
+
+/* ============================================================
+   SHAKA (DASH + ClearKey)
+   ============================================================ */
+async function mountShaka(record, token){
+  shaka.polyfill.installAll();
+  if(!shaka.Player.isBrowserSupported()) throw new Error("Browser not supported.");
+
+  const container = $("player-container");
+  container.innerHTML = "";
+
+  const vid = document.createElement("video");
+  vid.id = "shaka-video";
+  vid.playsInline = true;
+  vid.setAttribute("playsinline","");
+  vid.setAttribute("webkit-playsinline","");
+  vid.preload = "none";
+  vid.muted = true;
+  vid.autoplay = true;
+  container.appendChild(vid);
+
+  const statusEl = document.createElement("div");
+  statusEl.id = "status";
+  container.appendChild(statusEl);
+
+  const loadEl = makeLoadingEl();
+  container.appendChild(loadEl);
+
+  player = new shaka.Player();
+  await player.attach(vid);
+
+  overlay = new shaka.ui.Overlay(player, container, vid);
+  overlay.configure({
+    controlPanelElements: ["play_pause","mute","volume","time_and_duration","spacer","picture_in_picture","fullscreen","overflow_menu"],
+    seekBarColors: { base:"#828282", buffered:"#ffc336", played:"#1fc7ff" }
+  });
+
+  let tries = 0;
+  (function tryInject(){
+    if(injectFitButton(container, vid)) return;
+    if(++tries < 10) setTimeout(tryInject, 150);
+  })();
+
+  const key = getClearKey(record);
+  if(key){ player.configure({ drm:{ clearKeys:{ [key.keyId]: key.key } } }); LOG("ClearKey applied:", key.keyId); }
+  else { player.configure({ drm: {} }); }
+
+  player.configure(buildCfg());
+
+  // Long-session "thermal" downgrade after 1h
+  sessionStart = Date.now();
+  thermalTimer = setInterval(() => {
+    if(Date.now() - sessionStart < 60 * 60 * 1000) return;
+    clearInterval(thermalTimer); thermalTimer = null;
+    if(thermalApplied) return;
+    thermalApplied = true;
+    try{
+      player.configure("streaming.bufferBehind", 8);
+      if(/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)){
+        player.configure("abr.restrictions.maxHeight", Math.min(PROF.maxH, 720));
+      }
+    }catch(_){}
+  }, 60000);
+
+  const url = record.link;
+
+  async function reload(){
+    if(refreshing || token !== playbackToken || !player) return;
+    if(retries >= 5){ toast("Stream Unavailable. Please Try Again Later.", "err", 0); return; }
+    refreshing = true; retries++;
+    const attempt = retries;
+    toast(`Reconnecting… (${attempt}/5)`, "warn", 0);
+    try{
+      player.configure(buildCfg());
+      await player.load(url);
+      if(token !== playbackToken){ refreshing = false; return; }
+      vid.play().catch(()=>{});
+      retries = 0; edgeTried = false;
+      toast("Live", "live", 4000);
+      refreshing = false;
+    }catch(err){
+      LOG(`Reload attempt ${attempt} failed:`, err);
+      const delay = Math.min(1000 * Math.pow(2, attempt - 1), 8000);
+      setTimeout(() => { refreshing = false; reload(); }, delay);
+    }
+  }
+
+  function goLiveEdge(){
+    if(refreshing || token !== playbackToken || !player) return;
+    try{ player.goToLive(); edgeTried = true; toast("Syncing To Live Edge…", "warn", 2000); }
+    catch(_){ reload(); }
+  }
+
+  const RECOVERABLE = [1001,1002,1003,4012,6006,6007,7000,7001,7002];
+  player.addEventListener("error", (ev) => {
+    if(token !== playbackToken) return;
+    const err = ev.detail, code = err && err.code;
+    if(code === 4014 && !restrictionsRelaxed){
+      restrictionsRelaxed = true; refreshing = true;
+      toast("Adjusting Quality…", "warn", 2000);
+      player.configure(buildCfg());
+      player.load(url)
+        .then(() => { if(token !== playbackToken) return; vid.play().catch(()=>{}); retries = 0; toast("Live","live",4000); })
+        .catch(() => { if(token === playbackToken) setTimeout(reload, 500); })
+        .finally(() => { refreshing = false; });
+      return;
+    }
+    if(RECOVERABLE.includes(code)){
+      toast("Buffering…", "warn", 0);
+      setTimeout(() => { if(!refreshing) reload(); }, 500);
+    } else {
+      toast(shakaErrStr(err), "err", 6000);
+    }
+  });
+
+  vid.addEventListener("waiting", () => {
+    if(stallTmr) return;
+    toast("Buffering…", "warn", 0);
+    if(!started || refreshing) return;
+    stallTmr = setTimeout(() => {
+      stallTmr = null;
+      if(!edgeTried) goLiveEdge(); else reload();
+    }, 5000);
+  });
+  vid.addEventListener("stalled", () => { if(!stallTmr) vid.dispatchEvent(new Event("waiting")); });
+
+  vid.addEventListener("playing", () => {
+    started = true;
+    if(stallTmr){ clearTimeout(stallTmr); stallTmr = null; }
+    if(!refreshing) toast("Live", "live", 3000);
+  });
+
+  vid.addEventListener("error", () => {
+    if(refreshing) return;
+    toast("Buffering…", "warn", 0);
+    setTimeout(() => { if(!refreshing) reload(); }, 500);
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if(!document.hidden){
+      setTimeout(() => { if(started && vid.paused && !refreshing) vid.play().catch(()=>{}); }, 400);
+    }
+  });
+
+  const unmuteOnce = () => { vid.muted = false; };
+  container.addEventListener("pointerdown", unmuteOnce, {capture:true, once:true});
+  container.addEventListener("click", unmuteOnce, {capture:true, once:true});
+  container.addEventListener("keydown", unmuteOnce, {capture:true, once:true});
+
+  const netConn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  if(netConn){
+    netConn.addEventListener("change", () => {
+      if(!player || restrictionsRelaxed) return;
+      const t = netConn.effectiveType || "4g";
+      const h = (t === "slow-2g" || t === "2g") ? 240 : t === "3g" ? 480 : PROF.maxH;
+      try{ player.configure("abr.restrictions.maxHeight", h); }catch(_){}
+      if(h < PROF.maxH) toast("Slow Network — Reducing Quality", "warn", 3000);
+    });
+  }
+
+  if("wakeLock" in navigator){ navigator.wakeLock.request("screen").catch(()=>{}); }
+
+  try{
+    toast("Loading Stream…", "warn", 0);
+    await player.load(url);
+    if(token !== playbackToken) return;
+    loadEl.hidden = true;
+    toast("Ready — Tap ▶ To Play", "ok", 5000);
+    vid.muted = true;
+    vid.play().catch(() => LOG("Autoplay blocked"));
+  }catch(e){
+    ERR("Initial load failed:", e);
+    loadEl.hidden = true;
+    toast("Connection Error — Retrying…", "warn", 0);
+    setTimeout(reload, 800);
+  }
+}
+
+/* ============================================================
+   PLAY ENTRY
+   ============================================================ */
+async function play(record){
+  const token = ++playbackToken;
+  await destroyPlayer();
+  const link = String(record.link || "").split("|")[0].trim();
+  if(!/^https?:\/\//i.test(link)){
+    $("player-container").innerHTML = `<div class="screen-msg">No valid .mpd URL provided.</div>`;
+    return;
+  }
+  try{
+    await mountShaka({...record, link}, token);
+  }catch(error){
+    if(token === playbackToken){
+      $("player-container").innerHTML = `<div class="screen-msg">Could not play this stream. ${esc(error.message || "")}</div>`;
+      ERR("Playback error:", error);
+    }
+  }
+}
+
+/* ============================================================
+   ROTATION / RESIZE
+   ============================================================ */
+function onViewportChange(){
+  if(overlay && overlay.getControls){ try{ overlay.getControls().dispatchEvent(new Event("resize")); }catch(_){} }
+}
+window.addEventListener("resize", onViewportChange, {passive:true});
+window.addEventListener("orientationchange", () => { setTimeout(onViewportChange, 200); setTimeout(onViewportChange, 450); });
+document.addEventListener("fullscreenchange", () => {
+  if(document.fullscreenElement){
+    if(screen.orientation && screen.orientation.lock) screen.orientation.lock("landscape").catch(()=>{});
+  } else if(screen.orientation && screen.orientation.unlock){
+    try{ screen.orientation.unlock(); }catch(_){}
+  }
+  setTimeout(onViewportChange, 120);
+});
+
+/* ============================================================
+   JSON SOURCE
+   Accepted shapes:
+     1) [ {title, link|url, type, key|api}, ... ]          ← stream list
+     2) { streams: [ ... ] }                                ← single event
+     3) [ {id, event:{...}, streams:[...]}, ... ]  or
+        { events: [ ... ] }                                 ← event list, pick with ?id=
+   ============================================================ */
+const JSON_URL = "";   // your own JSON file, or pass ?json=<url>
+
+async function fetchJson(url){
+  const res = await fetch(url, {cache:"no-store"});
+  if(!res.ok) throw new Error(`HTTP ${res.status}`);
+  const text = await res.text();
+  if(text.trim().startsWith("<")) throw new Error("Server returned HTML instead of JSON.");
+  return JSON.parse(text);
+}
+
+function normalizeStreams(raw){
+  const seen = new Set(), out = [];
+  (Array.isArray(raw) ? raw : []).forEach((s, i) => {
+    if(!s) return;
+    const link = String(s.link || s.url || "").split("|")[0].trim();
+    if(!/^https?:\/\//i.test(link) || seen.has(link)) return;
+    const t = String(s.type || "").toLowerCase();
+    const isDash = t === "dash" || /\.mpd(\?|$)/i.test(link);
+    const isHls  = t === "hls" || t === "0" || /\.m3u8(\?|$)/i.test(link);
+    if(!isDash && !isHls) return;
+    seen.add(link);
+    out.push({
+      title: String(s.title || s.name || `Stream ${i+1}`).trim(),
+      link,
+      type: isDash ? "DASH" : "HLS",   // Shaka plays both
+      key: String(s.api || s.key || "").trim()
+    });
+  });
+  return out;
+}
+
+function pickStreams(data, id){
+  const events = Array.isArray(data) ? data : (data && Array.isArray(data.events) ? data.events : null);
+  // Event list: items carry their own .streams
+  if(events && events.some(x => x && Array.isArray(x.streams))){
+    const ev = id != null ? events.find(x => String(x.id) === String(id)) : events.find(x => x.streams && x.streams.length);
+    if(!ev) throw new Error(`Event "${id}" not found in JSON.`);
+    return normalizeStreams(ev.streams);
+  }
+  if(data && Array.isArray(data.streams)) return normalizeStreams(data.streams);
+  if(Array.isArray(data)) return normalizeStreams(data);
+  throw new Error("Unrecognized JSON format.");
+}
+
+let streams = [];
+function renderStreams(active){
+  const box = $("streams");
+  box.innerHTML = streams.length > 1 ? streams.map((s, i) =>
+    `<button class="stream-btn ${i === active ? "active" : ""}" data-i="${i}" type="button">
+       <span class="title">${esc(s.title)}</span><span class="type-badge">${s.type}</span>
+     </button>`).join("") : "";
+}
+$("streams").addEventListener("click", e => {
+  const btn = e.target.closest("[data-i]"); if(!btn) return;
+  const i = Number(btn.dataset.i);
+  const p = new URLSearchParams(location.search); p.set("stream", i);
+  history.replaceState(null, "", "?" + p.toString());
+  renderStreams(i);
+  play(streams[i]);
+});
+
+/* ============================================================
+   BOOT
+   ?json=<url>&id=<eventId>&stream=<n>   → load from JSON
+   ?url=<mpd>&key=<kid:key>              → direct
+   ============================================================ */
+(async function boot(){
+  const qs = new URLSearchParams(location.search);
+  const jsonUrl = qs.get("json") || JSON_URL;
+  if(qs.get("url") || !jsonUrl){
+    play({ link: qs.get("url") || DEFAULT_SOURCE.link, key: qs.get("key") || DEFAULT_SOURCE.key });
+    return;
+  }
+  try{
+    streams = pickStreams(await fetchJson(jsonUrl), qs.get("id"));
+    if(!streams.length) throw new Error("No playable streams in JSON.");
+    const idx = Math.min(Math.max(Number(qs.get("stream")) || 0, 0), streams.length - 1);
+    renderStreams(idx);
+    play(streams[idx]);
+  }catch(err){
+    ERR("JSON load failed:", err);
+    $("player-container").innerHTML = `<div class="screen-msg">Could not load JSON: ${esc(err.message)}</div>`;
+  }
+})();
+</script>
+</body>
+</html>
